@@ -1,0 +1,418 @@
+---
+title: "Assignment3-Natta-HotelBookingDemand"
+author: "Kavya Deepthi Natta"
+date: "4/14/2021"
+output: html_document
+---
+
+#                             Hotel Booking Demand
+##      Kaggle dataset: https://www.kaggle.com/jessemostipak/hotel-booking-demand
+
+
+```{r, message=FALSE, warning=FALSE, comment = NA}
+#keras::install_keras()
+#install.packages("tidyverse")
+#install.packages(c("purrr","repurrrsive", "doParallel", "foreach"))
+require(repurrrsive)
+require(ggplot2)
+#install.packages("RColorBrewer")
+require(RColorBrewer)
+#install.packages("ggthemes") 
+require(ggthemes)
+require(plotrix)
+#install.packages("skimr")
+require(skimr)
+#install.packages("recipes")
+require(recipes)
+#install.packages(c("keras", "reticulate"))
+require(keras)
+require(reticulate)
+require(tidyverse)
+#install.packages("h2o-3.32.1.1/R/h2o_3.32.1.1.tar.gz",repos = NULL, type = "source")
+#install.packages("rsparkling")
+require(rsparkling)
+require(sparklyr)
+require(h2o)
+require(dplyr)
+rm(list =ls())
+```
+
+## Background:
+ - The dataset contains booking information for a city hotel and a resort hotel and includes information such as when the booking was made, length of stay, the number of adults, children, and/or babies, and the number of available parking spaces, among other things.
+
+
+## Data Preparation:
+
+```{r, message=FALSE, warning=FALSE, comment = NA}
+getwd()
+list.files()
+#setwd("D:/GSU/topics in big data/Assignment-3")
+require(tidyverse)
+df = read_csv("hotel_bookings.csv",na=c("-","NA","Not Available","","NULL"))
+str(df)
+typeof(df)
+typeof(df$agent)
+typeof(df$company)
+```
+
+## Data cleaning:
+
+- Converting df to Dataframe
+
+- finding if df has na values and the sum of na values
+
+- replacing na values with '0' and replacing null values with median of agent and company columns with mutate
+
+- regarding 'meal' column, there's 'SC' category and also 'undefined'. as both have same meaning - no meal package, changing undefined to "SC"
+
+- converting data types of "meal", "is_repeated_guest" to categorical variable
+
+- converting is_canceled and is_repeated_guest from double to categorical
+
+
+```{r, message=FALSE, warning=FALSE, comment = NA}
+df <- as.data.frame(df)
+colSums(is.na(df))
+df[is.na(df)] <- 0
+median(df$agent)
+mean(df$company)
+mean(df$agent)
+median(df$company)
+
+df <- df %>% mutate(Agent_wo_null = replace(df$agent,df$agent == 0, median(df$agent))) %>%
+  mutate(Company_wo_null = replace(df$company,df$company == 0, round(mean(df$company))))
+```
+
+```{r setup, message=FALSE, warning=FALSE, comment = NA}
+typeof(df$meal)
+df$meal <- as.factor(df$meal)
+levels(df$meal) <- c("BB", "FB", "HB","SC","SC")
+levels(df$meal)
+typeof(df$is_repeated_guest)
+df$is_canceled <- as.factor(df$is_canceled)
+df$is_repeated_guest <- as.factor(df$is_repeated_guest)
+
+summary(df)
+```
+
+# Data Exploration:
+
+## Plot-1
+
+### Total percentage of repeated guests vs non repeated guests:
+
+-Interpretation using Pie chart: as per below pie chart, 96.8% are not repeated guests and only 3.19% are repeated guests
+
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+df %>% group_by(is_repeated_guest) %>%
+  count(is_repeated_guest) %>%
+  summarise(percent = (n/nrow(df))*100 , total=n)
+
+a<-sum(df$is_repeated_guest == "1" )
+b<-sum(df$is_repeated_guest == "0")
+stats <- c(a,b)
+label<- c("Repeated guest", "unrepeated guest")
+require(plotrix)
+pie3D(stats,labels=label)  
+```
+
+# Data Visualizations:
+
+## Plot-2
+
+### Plot for adults stayed at weekends based on customer type:
+
+### Interpretation:
+
+- so from the graph, it says about adults who stayed at weekends based on customer_type over years 2015-2017
+
+- In the year 2015, customer type - transient are more and group being less.
+
+- comparing all the years, customer_type - transient dominated other types
+
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+ggplot(data = df) + geom_point(mapping = aes(x = adults, y = stays_in_weekend_nights, color = customer_type ))+
+  facet_wrap(~arrival_date_year)+
+  ggtitle("Plot for adults stayed at weekends based on customer type")
+```
+
+## Plot-3
+
+### Plot for average daily rate in each month among the years recorded
+
+### Interpretation:
+
+- Below plot shows the average daily rate among months in years from 2015-2017
+
+- As you see in the year 2015, City Hotel is the most preferred compared to resort hotel but limited to only few months - april, december, june, etc.,
+
+- but in 2016, average daily rate is almost similar among all the months which is a better performance with city hotel preferred over resort hotel the most
+
+- In the year 2017, highest average daily rate crossed 500 with city hotel and 450 for resort hotel
+
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+require(ggthemes)
+ggplot(data = df) +   geom_point(mapping = aes(x = arrival_date_month, y = adr, color=hotel))+ #, size = customer_type))+
+  geom_smooth(mapping = aes(x = arrival_date_month, y = adr, linetype = customer_type))+
+  facet_wrap(~arrival_date_year)+ylab("Average daily rate")+
+  ggtitle("Plot for average daily rate in each month among the years recorded")+
+  theme_gdocs() +  scale_color_gdocs()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ylim(0,550)
+```
+
+## Plot-4
+
+### Type of hotel guests book and Type of hotel repeated guests book
+
+### Interpretation:
+
+- Below graph states which type of hotel the guests book the most using repeated guest as facets
+
+- so new guests (repeated guests=0) tend to book higher than repeated guests(=1). new guests preferred city hotel over resort hotel and most of them are Transient type
+
+- focusing more on repeated guests what they prefer booking(on sub-graph below), they prefer city hotel a little over resort hotel but difference is very small
+
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+ggplot(data=df) + geom_bar(mapping = aes(x = hotel, color = customer_type, fill=customer_type)) + 
+  ggtitle("Type of hotel guests book")+
+  facet_wrap(~is_repeated_guest)
+
+ggplot(data=df) + geom_bar(mapping = aes(x = hotel, linetype = customer_type, fill = customer_type)) + 
+  ggtitle("Type of hotel repeated guests book")+
+  facet_wrap(~is_repeated_guest)+ylim(0,3000)
+```
+
+
+# Data Modeling
+
+- Partitioned the data into Training and Testing data
+
+- separated training data into x and y tibbles, Test data into x tibble
+
+- converted character to factor for H2O
+
+- checking if numeric should be factored
+
+- pulled out a single variable as a vector
+
+- Used recipes for Machine learning
+
+- used bake function and comparing the processed data with original data
+
+- transformed outcome y and saving processed data to working directory 
+
+- Pushed the data into h2o 
+
+- listing and removed data from an H2O instance
+
+- Partitioned the training data into training, validation and test sets
+
+- Built and trained the models in h2o
+
+
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+set.seed(1) 
+selected.var <- c('hotel','lead_time', 'arrival_date_year','arrival_date_month','arrival_date_week_number',
+                  'arrival_date_day_of_month', 'stays_in_weekend_nights','stays_in_week_nights',
+                  'country','market_segment', 'distribution_channel','is_repeated_guest', 'previous_cancellations',
+                  'previous_bookings_not_canceled','reserved_room_type','assigned_room_type','booking_changes',
+                  'deposit_type','Agent_wo_null','Company_wo_null','customer_type', 'adr','required_car_parking_spaces',
+                  'total_of_special_requests','reservation_status','reservation_status_date','is_canceled','meal')
+train.index <- sample(c(1:dim(df)[1]), dim(df)[1]*0.6)  
+train.df <- df[train.index, selected.var]
+test.df <- df[-train.index, selected.var ]
+```
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+x_train_tbl <- train.df %>% select(-is_repeated_guest)
+y_train_tbl <- train.df %>% select(is_repeated_guest)
+
+x_test_tbl <-test.df
+
+require(skimr)
+x_train_tbl_skim = partition(skim(x_train_tbl))
+names(x_train_tbl_skim)
+x_train_tbl_skim$character
+x_train_tbl_skim$numeric
+x_train_tbl_skim$factor
+factor_value <- x_train_tbl_skim$factor
+```
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+string_2_factor_names <- x_train_tbl_skim$character$skim_variable
+string_2_factor_names
+
+unique_numeric_values_tbl <- x_train_tbl %>%
+  select(x_train_tbl_skim$numeric$skim_variable) %>%
+  map_df(~ unique(.) %>% length()) %>%
+  gather() %>%
+  arrange(value) %>%
+  mutate(key = as_factor(key))
+unique_numeric_values_tbl
+
+factor_2_factor_names <- x_train_tbl_skim$factor$skim_variable
+factor_2_factor_names
+```
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+factor_limit = 6900
+num_2_factor_names <- unique_numeric_values_tbl %>%
+  filter(value < factor_limit) %>%
+  arrange(desc(value)) %>%
+  pull(key) %>% # pull out a single variable as a vector
+  as.character()
+num_2_factor_names
+```
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+require(recipes)
+rec_obj <- recipe(~ ., data = x_train_tbl) %>%
+  #step_string2factor(string_2_factor_names) %>% step_dummy(factor_2_factor_names) %>%
+  #step_num2factor(num_2_factor_names,
+  #               levels=str_c(0:7),
+  #              transform = function(x) x + 1) %>%
+  step_meanimpute(all_numeric()) %>% # missing values in numeric columns
+  step_modeimpute(all_nominal()) %>% # missing values in factor columns
+  prep(training = x_train_tbl)
+rec_obj
+```
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+require(recipes)
+x_train_processed_tbl <- bake(rec_obj, x_train_tbl)
+x_test_processed_tbl <- bake(rec_obj, x_test_tbl)
+
+x_train_tbl %>% # original data before baking
+  select(1:27) %>%
+  glimpse()
+x_train_processed_tbl %>% # processed data after baking
+  select(1:27) %>%
+  glimpse()
+```
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+rec_obj_for_y <- recipe(~ ., data = y_train_tbl) %>%
+  #step_dummy("is_repeated_guest", levels = c("0","1"),
+  #               transform = function(x) x + 1) %>%
+  prep(stringsAsFactors = FALSE)
+y_train_processed_tbl <- bake(rec_obj_for_y, y_train_tbl)
+
+write_rds(x_train_processed_tbl, "x_train_processed_tbl.rds")
+write_rds(x_test_processed_tbl, "x_test_processed_tbl.rds")
+write_rds(y_train_processed_tbl, "y_train_processed_tbl.rds")
+```
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+#install.packages("h2o-3.32.1.1/R/h2o_3.32.1.1.tar.gz",repos = NULL, type = "source")
+
+
+if(!"h2o" %in% rownames(installed.packages()) |
+   packageVersion("h2o") != "3.28.0.2") {
+  install.packages("remotes")
+  remotes::install_version("h2o", "3.28.0.2", upgrade=F)
+}
+require(h2o)
+h2o.init(nthreads = -1) 
+h2o.clusterInfo()
+```
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+data_h2o <- as.h2o(
+  bind_cols(y_train_processed_tbl, x_train_processed_tbl),
+  destination_frame= "train.hex"
+)
+new_data_h2o <- as.h2o(
+  x_test_processed_tbl,
+  destination_frame= "test.hex" 
+)
+
+data_h2o_no_destination <- as.h2o(
+  bind_cols(y_train_processed_tbl, x_train_processed_tbl)
+)
+```
+
+### splitting the training data
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+h2o.ls()
+
+h2o_keys = as.character(h2o.ls()$key)
+h2o.rm(h2o_keys[str_detect(h2o_keys, "^data")])
+h2o.ls()
+
+splits <- h2o.splitFrame(data = data_h2o,
+                         ratios = c(0.7, 0.15), # 70/15/15 split
+                         seed = 1234)
+train_h2o <- splits[[1]] # from training data
+valid_h2o <- splits[[2]] # from training data
+test_h2o <- splits[[3]] # from training data
+```
+
+## Random forest model:
+
+- Evaluated performance and Generating predictions on a validation set
+
+- based on reports on Training data, r-squared value =0.50 whereas on validation data its value = 0.55
+
+- Area under curve value is 0.95 for training data and 0.98 on test data
+
+- RMSE value is very less for test data 
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+predictors <- c('hotel','lead_time', 'arrival_date_year','arrival_date_month','arrival_date_week_number',
+                  'arrival_date_day_of_month', 'stays_in_weekend_nights','stays_in_week_nights',
+                  'country','market_segment', 'distribution_channel', 'previous_cancellations',
+                  'previous_bookings_not_canceled','reserved_room_type','assigned_room_type','booking_changes',
+                  'deposit_type','Agent_wo_null','Company_wo_null','customer_type', 'adr','required_car_parking_spaces',
+                  'total_of_special_requests','reservation_status','reservation_status_date','is_canceled','meal')
+response <- "is_repeated_guest"
+m1 <- h2o.randomForest(x = predictors,
+                             y = response,
+                             ntrees = 10,
+                             max_depth = 5,
+                             min_rows = 10,
+                             calibrate_model = TRUE,
+                             calibration_frame = test_h2o,
+                             binomial_double_trees = TRUE,
+                             training_frame = train_h2o,
+                             validation_frame = valid_h2o)
+
+
+perf <- h2o.performance(m1)
+
+
+predict <- h2o.predict(m1, newdata = valid_h2o)
+summary(m1)
+```
+
+## Deep Learning:
+
+- Area under curve value is 0.98 for training data and 0.97 on test data
+
+- RMSE value is very less compared to random forest model which is 0.09 for training and 0.099 for test data
+
+- Mean Per-Class Error is less for training data = 0.07 and for test data = 0.09
+
+- Deep learning model is better than random forest model
+
+```{r , message=FALSE, warning=FALSE, comment = NA}
+m2 <- h2o.deeplearning(
+  x= predictors,
+  y = response,
+  training_frame = train_h2o,
+  validation_frame = valid_h2o,
+  hidden = c(32,32,32), ## small network, runs faster
+  epochs = 1000000, ## hopefully converges earlier...
+  score_validation_samples = 10000, ## sample the validation dataset (faster)
+  stopping_metric = "misclassification", ## could also be "MSE","logloss","r2"
+  stopping_rounds = 2, ## for 2 consecutive scoring events
+  stopping_tolerance = 0.01 ## stop if the improvement is less than 1%
+)
+summary(m2)
+
+```
